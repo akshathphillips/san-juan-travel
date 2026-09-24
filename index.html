@@ -149,6 +149,9 @@
   .badge.sugg { background: var(--sand); color: #8A5A00; }
   :root[data-theme="dark"] .badge.sugg { color: #F5C66B; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .badge.sugg { color: #F5C66B; } }
+  .badge.ai { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); color: var(--accent); }
+  .pop .src { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .pop .src b { color: var(--accent); font-weight: 600; }
   .quick { display: flex; gap: 6px; }
   .quick a, .quick button {
     width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; text-decoration: none;
@@ -285,7 +288,7 @@
         <option value="name">A → Z</option>
       </select>
     </div>
-    <label class="toggle"><input type="checkbox" id="hideClosed" checked> Hide closed spots</label>
+    <label class="toggle"><input type="checkbox" id="showClaude" checked> Show Akshath’s Claude picks <span id="claudeCount"></span></label>
     <div id="list"></div>
     <div class="footer-actions">
       <button class="icon-btn" id="shareBtn">🔗 Share plan link</button>
@@ -365,7 +368,8 @@
   const todayDay = DAYS.find(d => d.date === todayISO);
   let view = {
     day: (() => { try { return localStorage.getItem(KEY + ".day"); } catch { return null; } })() || (todayDay ? todayDay.id : "all"),
-    q: "", hideClosed: true, sort: "group", focus: null
+    q: "", hideClosed: true, sort: "group", focus: null,
+    showClaude: (() => { try { return localStorage.getItem(KEY + ".claude") !== "off"; } catch { return true; } })()
   };
   if (view.day !== "all" && !DAY[view.day]) view.day = "all";
   let me = null;
@@ -373,12 +377,15 @@
   // ── helpers ──
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const isClosed = p => /closed/i.test(p.status || "");
+  const SOURCE = { list: "Akshath’s list", claude: "Akshath’s Claude", custom: "Added on the map" };
+  const sourceBadge = p => p.source === "claude" ? `<span class="badge ai">Akshath’s Claude</span>`
+    : p.source === "custom" ? `<span class="badge sugg">Added</span>` : "";
   function emojiFor(p) {
     if (p.kind === "home") return "🏠";
     if (p.kind === "airport") return "✈️";
     const c = (p.category + " " + p.name).toLowerCase();
     const rules = [
-      [/piña|pina colada/, "🍹"], [/piano/, "🎹"], [/fort|castillo/, "🏰"], [/beach|playa/, "🏖️"], [/street food|kiosk/, "🥟"],
+      [/piña|pina colada/, "🍹"], [/chocolate/, "🍫"], [/dessert|gelato|ice cream|paleta|helado/, "🍨"], [/mezcal|whiskey|speakeasy/, "🥃"], [/piano/, "🎹"], [/fort|castillo/, "🏰"], [/beach|playa/, "🏖️"], [/street food|kiosk/, "🥟"],
       [/plaza|placita/, "🎉"], [/walk|paseo/, "🌅"], [/sight/, "📸"], [/fast food|taco/, "🌮"], [/pizza/, "🍕"],
       [/seafood/, "🦐"], [/nightlife|cocktail|bar|drinks/, "🍸"], [/breakfast|bakery|brunch/, "🥐"], [/coffee|café|cafe/, "☕"],
       [/puerto rican/, "🇵🇷"], [/market/, "🧺"], [/dinner|restaurant|lunch/, "🍽️"]
@@ -420,6 +427,7 @@
   function matches(p) {
     if (isFixed(p)) return false;
     if (view.hideClosed && isClosed(p)) return false;
+    if (!view.showClaude && p.source === "claude") return false;
     if (view.day !== "all" && p.day !== view.day) return false;
     if (view.q) {
       const hay = `${p.name} ${p.category} ${p.area} ${p.notes} ${p.address}`.toLowerCase();
@@ -470,13 +478,14 @@
 
   function popupHTML(p) {
     const dist = distLabel(p);
-    const badge = isClosed(p) ? `<span class="badge closed">${esc(p.status)}</span>` : p.source === "suggested" ? `<span class="badge sugg">Suggested</span>` : p.source === "custom" ? `<span class="badge sugg">Added</span>` : "";
+    const badge = isClosed(p) ? `<span class="badge closed">${esc(p.status)}</span>` : sourceBadge(p);
     const dayOpts = DAYS.map(d => `<option value="${d.id}" ${d.id === p.day ? "selected" : ""}>${d.id === "none" ? "Unplanned" : d.label}</option>`).join("");
     return `<div class="pop">
       <h3>${esc(p.name)} ${badge}</h3>
       <div class="meta">${esc(p.category)}${p.area ? " · " + esc(p.area) : ""}${dist ? " · " + dist + " from casa" : ""}</div>
       ${p.address ? `<div class="addr">${esc(p.address)}</div>` : ""}
       ${p.notes ? `<div class="note">${esc(p.notes)}</div>` : ""}
+      ${SOURCE[p.source] ? `<div class="src">Source: <b>${SOURCE[p.source]}</b></div>` : ""}
       <div class="row">
         <a class="btn" href="${mapsUrl(p)}" target="_blank" rel="noopener">🧭 Directions</a>
         <a class="btn uber" href="${uberUrl(p)}" target="_blank" rel="noopener">Uber</a>
@@ -497,7 +506,7 @@
     for (const p of allPlaces()) {
       if (!isFixed(p) && !matches(p)) continue;
       const m = L.marker([p.lat, p.lng], { icon: icon(p), zIndexOffset: isFixed(p) ? 1000 : 0, title: p.name, riseOnHover: true });
-      m.bindPopup(() => popupHTML(allPlaces().find(x => x.id === p.id) || p), { maxWidth: 300, autoPanPadding: [20, 20] });
+      m.bindPopup(() => popupHTML(allPlaces().find(x => x.id === p.id) || p), { maxWidth: 300, autoPanPaddingTopLeft: [16, 16], autoPanPaddingBottomRight: [70, 16] });
       m.on("popupopen", () => setFocus(p.id, false));
       m.addTo(layer);
       markers.set(p.id, m);
@@ -506,7 +515,8 @@
 
   // ── panel ──
   function renderChips() {
-    const ps = allPlaces().filter(p => !isFixed(p) && !(view.hideClosed && isClosed(p)));
+    const ps = allPlaces().filter(p => !isFixed(p) && !(view.hideClosed && isClosed(p)) && (view.showClaude || p.source !== "claude"));
+    $("#claudeCount").textContent = `(${allPlaces().filter(p => p.source === "claude").length})`;
     const count = id => id === "all" ? ps.length : ps.filter(p => p.day === id).length;
     const chip = (id, label, color, isToday) =>
       `<button class="chip ${view.day === id ? "active" : ""}" data-day="${id}" style="--c:${color}">
@@ -542,7 +552,7 @@
     return `<div class="card ${closed ? "closed" : ""} ${p.done ? "done" : ""} ${view.focus === p.id ? "focus" : ""}" data-id="${esc(p.id)}" style="--c:${color}">
       <div class="emoji">${emojiFor(p)}</div>
       <div>
-        <div class="name">${esc(p.name)}${closed ? `<span class="badge closed">Closed</span>` : p.source === "suggested" ? `<span class="badge sugg">Idea</span>` : p.source === "custom" ? `<span class="badge sugg">Added</span>` : ""}</div>
+        <div class="name">${esc(p.name)}${closed ? `<span class="badge closed">Closed</span>` : sourceBadge(p)}</div>
         <div class="meta">${dayTag}${esc(p.category)}${dist ? " · " + dist : ""}</div>
       </div>
       <div class="quick">
@@ -626,7 +636,13 @@
     $("#scroll").scrollTop = 0;
   });
   $("#q").addEventListener("input", e => { view.q = e.target.value.trim(); renderList(); renderMarkers(); });
-  $("#hideClosed").addEventListener("change", e => { view.hideClosed = e.target.checked; render(); });
+  $("#showClaude").checked = view.showClaude;
+  $("#showClaude").addEventListener("change", e => {
+    view.showClaude = e.target.checked;
+    try { localStorage.setItem(KEY + ".claude", view.showClaude ? "on" : "off"); } catch {}
+    map.closePopup(); render({ fit: true });
+    toast(view.showClaude ? "Showing Akshath’s Claude picks" : "Showing only your list + added spots");
+  });
   $("#sort").addEventListener("change", e => {
     view.sort = e.target.value;
     if (view.sort === "me" && !me) locate(() => renderList());
@@ -800,7 +816,7 @@
   $("#csvBtn").onclick = () => {
     const cols = ["Name", "Address", "Area", "Category", "Status", "Notes", "Day", "Done", "Lat", "Lng", "Source"];
     const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = allPlaces().map(p => [p.name, p.address, p.area, p.category, p.status, p.notes, p.day === "none" ? "" : DAY[p.day].label, p.done ? "yes" : "", p.lat, p.lng, p.source].map(q).join(","));
+    const rows = allPlaces().map(p => [p.name, p.address, p.area, p.category, p.status, p.notes, p.day === "none" ? "" : DAY[p.day].label, p.done ? "yes" : "", p.lat, p.lng, SOURCE[p.source] || p.source].map(q).join(","));
     const blob = new Blob([[cols.join(","), ...rows].join("\n")], { type: "text/csv" });
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "san_juan_plan.csv" });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
