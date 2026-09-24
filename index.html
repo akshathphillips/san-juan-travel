@@ -175,6 +175,7 @@
     display: grid; place-items: center; font-size: 19px;
   }
   .fab.primary { background: var(--accent); color: #fff; font-size: 26px; font-weight: 300; }
+  .dark-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }
   .leaflet-control-zoom { display: none; }
   @media (min-width: 900px) { .leaflet-control-zoom { display: block; } }
 
@@ -466,11 +467,22 @@
   // ── map ──
   const map = L.map("map", { zoomControl: true, tap: true }).setView([18.455, -66.08], 13);
   map.zoomControl.setPosition("bottomright");
-  const tileUrl = dark => `https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "rastertiles/voyager"}/{z}/{x}/{y}{r}.png`;
-  const tiles = L.tileLayer(tileUrl(false), {
-    maxZoom: 20, subdomains: "abcd",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  }).addTo(map);
+  // Free, keyless basemaps. OpenStreetMap first; if its tiles keep failing, fall back to Esri.
+  const PROVIDERS = [
+    ["https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'],
+    ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+      'Tiles &copy; <a href="https://www.esri.com">Esri</a>']
+  ];
+  let provider = 0, tileErrors = 0;
+  const tiles = L.tileLayer(PROVIDERS[0][0], { maxZoom: 19, attribution: PROVIDERS[0][1] }).addTo(map);
+  tiles.on("tileerror", () => {
+    if (++tileErrors < 4 || provider >= PROVIDERS.length - 1) return;
+    provider++; tileErrors = 0;
+    map.attributionControl.removeAttribution(PROVIDERS[provider - 1][1]).addAttribution(PROVIDERS[provider][1]);
+    tiles.options.attribution = PROVIDERS[provider][1];
+    tiles.setUrl(PROVIDERS[provider][0]);
+  });
   const layer = L.layerGroup().addTo(map);
   const markers = new Map();
   let meMarker = null;
@@ -480,7 +492,7 @@
     if (t) return t === "dark";
     return matchMedia("(prefers-color-scheme: dark)").matches;
   }
-  function applyTheme() { tiles.setUrl(tileUrl(isDark())); }
+  function applyTheme() { document.documentElement.classList.toggle("dark-map", isDark()); }
   try { const t = localStorage.getItem(KEY + ".theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
   applyTheme();
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
