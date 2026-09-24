@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>San Juan Trip Map</title>
+<meta name="description" content="Interactive food & day-by-day map for San Juan, Sep 24–27.">
+<meta name="theme-color" content="#0E9384">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌴</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<style>
+  :root {
+    --bg: #FBF7F0;
+    --panel: #FFFFFF;
+    --ink: #1D2327;
+    --muted: #66707A;
+    --line: #ECE5D8;
+    --chip: #F3EDE2;
+    --accent: #0E9384;
+    --sand: #F6E7C8;
+    --shadow: 0 10px 30px rgba(29, 35, 39, .12), 0 2px 6px rgba(29, 35, 39, .06);
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12171B; --panel: #1A2126; --ink: #EEF1F3; --muted: #9AA6B0;
+      --line: #28323A; --chip: #232C33; --sand: #2A2A22;
+      --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12171B; --panel: #1A2126; --ink: #EEF1F3; --muted: #9AA6B0;
+    --line: #28323A; --chip: #232C33; --sand: #2A2A22;
+    --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--ink);
+    -webkit-font-smoothing: antialiased; overflow: hidden;
+  }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  #map { position: fixed; inset: 0; background: var(--bg); }
+  @media (min-width: 900px) { #map { left: 420px; } }
+
+  /* ── panel ── */
+  .panel {
+    position: fixed; z-index: 1000; background: var(--panel);
+    display: flex; flex-direction: column; box-shadow: var(--shadow);
+  }
+  @media (min-width: 900px) {
+    .panel { top: 0; bottom: 0; left: 0; width: 420px; border-right: 1px solid var(--line); }
+    .handle { display: none; }
+  }
+  @media (max-width: 899px) {
+    .panel {
+      left: 0; right: 0; bottom: 0; height: 46vh; height: 46dvh;
+      border-radius: 22px 22px 0 0; transition: height .25s ease;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .panel.expanded { height: 88vh; height: 88dvh; }
+    .panel.collapsed { height: 172px; }
+    .handle { display: flex; justify-content: center; padding: 8px 0 2px; border: 0; background: none; width: 100%; }
+    .handle span { width: 44px; height: 5px; border-radius: 3px; background: var(--line); }
+  }
+
+  header.top { padding: 14px 18px 10px; }
+  .title-row { display: flex; align-items: center; gap: 10px; }
+  h1 {
+    font-family: "DM Serif Display", Georgia, serif; font-weight: 400;
+    font-size: 30px; line-height: 1; margin: 0; letter-spacing: -.01em;
+  }
+  h1 .wave { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .spacer { flex: 1; }
+  .icon-btn {
+    border: 1px solid var(--line); background: var(--panel); border-radius: 12px;
+    height: 36px; min-width: 36px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 13px; font-weight: 600;
+  }
+  .icon-btn:hover { background: var(--chip); }
+  .home-btn { background: var(--ink); color: var(--panel); border-color: var(--ink); text-decoration: none; white-space: nowrap; flex: none; }
+  .home-btn:hover { background: var(--ink); opacity: .9; }
+
+  .chips { display: flex; gap: 6px; overflow-x: auto; padding: 4px 18px 10px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; border: 1px solid transparent; background: var(--chip); border-radius: 999px;
+    padding: 7px 12px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+  .chip .n { font-weight: 500; color: var(--muted); font-size: 12px; }
+  .chip.active { background: var(--c, var(--ink)); color: #fff; }
+  .chip.active .dot { background: #fff; }
+  .chip.active .n { color: rgba(255,255,255,.8); }
+  .chip .today { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; background: rgba(255,255,255,.25); padding: 1px 5px; border-radius: 5px; }
+  .chip:not(.active) .today { background: var(--sand); }
+
+  .scroll { flex: 1; overflow-y: auto; padding: 0 18px 110px; -webkit-overflow-scrolling: touch; }
+  @media (min-width: 900px) { .scroll { padding-bottom: 24px; } }
+
+  .plan {
+    border-radius: var(--radius); padding: 14px 16px; margin: 2px 0 14px;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--c) 16%, var(--panel)), var(--panel));
+    border: 1px solid color-mix(in srgb, var(--c) 30%, var(--line));
+  }
+  .plan .when { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--c); }
+  .plan h2 { font-family: "DM Serif Display", Georgia, serif; font-weight: 400; font-size: 22px; margin: 2px 0 10px; }
+  .plan ol { list-style: none; margin: 0; padding: 0; }
+  .plan li { display: grid; grid-template-columns: 78px 1fr; gap: 8px; font-size: 13.5px; padding: 5px 0; border-top: 1px dashed color-mix(in srgb, var(--c) 25%, var(--line)); }
+  .plan li:first-child { border-top: 0; }
+  .plan li b { font-weight: 600; color: var(--c); font-size: 12.5px; padding-top: 1px; }
+
+  .tools { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
+  .search {
+    flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 12px;
+    padding: 9px 12px; font-size: 14px; outline: none;
+  }
+  .search:focus { border-color: var(--accent); }
+  .tools select { border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 8px 8px; font-size: 13px; }
+  .toggle { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin: -2px 0 10px; }
+
+  .group-h { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; display: flex; align-items: center; gap: 8px; }
+  .group-h::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  .card {
+    display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: center;
+    padding: 10px; border-radius: 14px; border: 1px solid transparent; cursor: pointer; transition: background .15s;
+  }
+  .card:hover, .card.focus { background: var(--chip); }
+  .card.focus { border-color: var(--line); }
+  .card .emoji {
+    width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 21px;
+    background: color-mix(in srgb, var(--c) 14%, var(--panel)); border: 2px solid var(--c); position: relative;
+  }
+  .card .name { font-weight: 600; font-size: 14.5px; line-height: 1.25; }
+  .card .meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .card.closed .name { text-decoration: line-through; opacity: .6; }
+  .card.done .emoji::after { content: "✓"; position: absolute; right: -6px; top: -6px; background: #16A34A; color: #fff; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; display: grid; place-items: center; font-weight: 700; }
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 6px; margin-left: 4px; vertical-align: 1px; }
+  .badge.closed { background: #FDE2E2; color: #B42318; }
+  .badge.sugg { background: var(--sand); color: #8A5A00; }
+  :root[data-theme="dark"] .badge.sugg { color: #F5C66B; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .badge.sugg { color: #F5C66B; } }
+  .quick { display: flex; gap: 6px; }
+  .quick a, .quick button {
+    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; text-decoration: none;
+    background: var(--panel); border: 1px solid var(--line); font-size: 15px;
+  }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 26px 10px; }
+
+  .footer-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .footer-actions .icon-btn { font-weight: 500; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; line-height: 1.5; }
+
+  /* ── map controls ── */
+  .fabs { position: fixed; z-index: 900; right: 14px; top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .fab {
+    width: 46px; height: 46px; border-radius: 14px; border: 0; background: var(--panel); box-shadow: var(--shadow);
+    display: grid; place-items: center; font-size: 19px;
+  }
+  .fab.primary { background: var(--accent); color: #fff; font-size: 26px; font-weight: 300; }
+  .leaflet-control-zoom { display: none; }
+  @media (min-width: 900px) { .leaflet-control-zoom { display: block; } }
+
+  .banner {
+    position: fixed; z-index: 1100; left: 50%; top: 14px; transform: translateX(-50%);
+    background: var(--ink); color: var(--panel); padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 500;
+    box-shadow: var(--shadow); display: none; align-items: center; gap: 10px; max-width: calc(100vw - 32px);
+  }
+  .banner.show { display: flex; }
+  .banner button { background: rgba(255,255,255,.15); border: 0; color: inherit; border-radius: 8px; padding: 4px 8px; }
+  .toast {
+    position: fixed; z-index: 1200; left: 50%; bottom: calc(50vh + 12px); transform: translate(-50%, 10px);
+    background: var(--ink); color: var(--panel); padding: 9px 14px; border-radius: 12px; font-size: 13.5px;
+    opacity: 0; pointer-events: none; transition: all .2s; max-width: calc(100vw - 32px); text-align: center;
+  }
+  @media (min-width: 900px) { .toast { bottom: 24px; left: calc(50% + 210px); } }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ── pins ── */
+  .pin-wrap { background: none; border: 0; }
+  .pin {
+    width: 38px; height: 38px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg);
+    background: var(--panel); border: 3px solid var(--c); box-shadow: 0 4px 10px rgba(0,0,0,.25);
+    display: grid; place-items: center; transition: transform .15s; position: relative;
+  }
+  .pin span { transform: rotate(45deg); font-size: 17px; line-height: 1; }
+  .pin.closed { filter: grayscale(1); opacity: .55; }
+  .pin.done::after { content: "✓"; position: absolute; transform: rotate(45deg); top: -8px; right: -8px; width: 17px; height: 17px; border-radius: 50%; background: #16A34A; color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+  .pin.big { width: 46px; height: 46px; background: var(--c); }
+  .pin.big span { font-size: 21px; }
+  .pin-wrap.focus .pin { transform: rotate(-45deg) scale(1.25); }
+  .me-dot { width: 18px; height: 18px; border-radius: 50%; background: #2F6FED; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(47,111,237,.25); }
+
+  /* ── popup ── */
+  .leaflet-popup-content-wrapper { border-radius: 16px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+  .leaflet-popup-tip { background: var(--panel); }
+  .leaflet-popup-content { margin: 14px 16px; font-family: Inter, system-ui, sans-serif; min-width: 230px; }
+  .leaflet-container a.leaflet-popup-close-button { color: var(--muted); top: 6px; right: 6px; }
+  .pop h3 { margin: 0 18px 2px 0; font-size: 16px; line-height: 1.25; }
+  .pop .meta { color: var(--muted); font-size: 12.5px; }
+  .pop .addr { font-size: 12.5px; margin: 8px 0 0; color: var(--muted); }
+  .pop .note { font-size: 13px; margin: 8px 0 0; padding: 8px 10px; background: var(--chip); border-radius: 10px; }
+  .pop .row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .pop .btn {
+    flex: 1; min-width: 0; text-align: center; text-decoration: none; color: var(--ink) !important; background: var(--chip);
+    border: 0; border-radius: 10px; padding: 8px 6px; font-size: 13px; font-weight: 600; white-space: nowrap;
+  }
+  .pop .btn.uber { background: #000; color: #fff !important; }
+  .pop .btn.ghost { background: none; border: 1px solid var(--line); font-weight: 500; font-size: 12px; }
+  .pop select { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 7px 8px; font-size: 13px; font-weight: 600; }
+  .pop label.lbl { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: block; margin: 10px 0 4px; }
+
+  /* ── dialog ── */
+  dialog {
+    border: 0; border-radius: 20px; padding: 0; width: min(440px, calc(100vw - 32px)); background: var(--panel); color: var(--ink);
+    box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgba(10, 14, 18, .45); }
+  .dlg { padding: 18px; }
+  .dlg h2 { font-family: "DM Serif Display", Georgia, serif; font-weight: 400; font-size: 24px; margin: 0 0 4px; }
+  .dlg p.s { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .field input, .field select, .field textarea {
+    width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 9px 10px; font-size: 14px; outline: none;
+  }
+  .field input:focus, .field textarea:focus { border-color: var(--accent); }
+  .inline { display: flex; gap: 6px; }
+  .inline input { flex: 1; min-width: 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .results { margin-top: 6px; display: grid; gap: 4px; }
+  .results button { text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 7px 10px; font-size: 12.5px; }
+  .results button:hover { border-color: var(--accent); }
+  .pinstate { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .pinstate.ok { color: #16A34A; font-weight: 600; }
+  .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  .btn-primary { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 600; }
+  .btn-plain { background: var(--chip); border: 0; border-radius: 12px; padding: 10px 14px; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div id="map" aria-label="Map of San Juan"></div>
+
+<div class="fabs">
+  <button class="fab primary" id="addBtn" title="Suggest a new spot" aria-label="Suggest a new spot">+</button>
+  <button class="fab" id="locBtn" title="Show my location" aria-label="Show my location">📍</button>
+  <button class="fab" id="fitBtn" title="Fit all pins" aria-label="Fit all pins">🗺️</button>
+  <button class="fab" id="themeBtn" title="Toggle light/dark" aria-label="Toggle light or dark">🌓</button>
+</div>
+
+<div class="banner" id="banner"><span id="bannerText">Tap the map to drop the pin</span><button id="bannerCancel">Cancel</button></div>
+<div class="toast" id="toast"></div>
+
+<aside class="panel" id="panel">
+  <button class="handle" id="handle" aria-label="Resize panel"><span></span></button>
+  <header class="top">
+    <div class="title-row">
+      <div>
+        <h1>San Juan <span class="wave">〰</span></h1>
+        <div class="sub" id="sub">Thu Sep 24 → Sun Sep 27 · Casa Saffra</div>
+      </div>
+      <div class="spacer"></div>
+      <a class="icon-btn home-btn" id="uberHome" target="_blank" rel="noopener" title="Uber back to Casa Saffra">🏠 Uber home</a>
+    </div>
+  </header>
+  <nav class="chips" id="chips" aria-label="Filter by day"></nav>
+  <div class="scroll" id="scroll">
+    <div id="planBox"></div>
+    <div class="tools">
+      <input class="search" id="q" type="search" placeholder="Search food, drinks, beaches…" autocomplete="off">
+      <select id="sort" aria-label="Sort">
+        <option value="group">By area</option>
+        <option value="dist">Nearest casa</option>
+        <option value="me">Nearest me</option>
+        <option value="name">A → Z</option>
+      </select>
+    </div>
+    <label class="toggle"><input type="checkbox" id="hideClosed" checked> Hide closed spots</label>
+    <div id="list"></div>
+    <div class="footer-actions">
+      <button class="icon-btn" id="shareBtn">🔗 Share plan link</button>
+      <button class="icon-btn" id="csvBtn">⬇️ Export CSV</button>
+      <button class="icon-btn" id="resetBtn">↺ Reset edits</button>
+    </div>
+    <p class="hint">Tap a pin to set its day, mark it done ✓, or open it in Maps/Uber. Tap <b>+</b> (or long-press the map) to add a spot. Your edits save on this device. Use <b>Share plan link</b> to send them to someone else. Pins are placed by hand from the addresses, so a few may be slightly off; <b>Move pin</b> fixes one.</p>
+  </div>
+</aside>
+
+<dialog id="dlg">
+  <form class="dlg" id="addForm" method="dialog">
+    <h2>Add a spot ✨</h2>
+    <p class="s">Something someone recommended? Drop it on the map.</p>
+    <div class="field">
+      <label for="fName">Name *</label>
+      <input id="fName" required placeholder="e.g. La Alcapurria Quemá">
+    </div>
+    <div class="field">
+      <label for="fAddr">Address or search</label>
+      <div class="inline">
+        <input id="fAddr" placeholder="Street, neighborhood…">
+        <button type="button" class="btn-plain" id="findBtn">Find</button>
+      </div>
+      <div class="results" id="results"></div>
+      <div class="inline" style="margin-top:6px">
+        <button type="button" class="btn-plain" id="pickBtn" style="flex:1">📍 Pick on map</button>
+      </div>
+      <div class="pinstate" id="pinState">No pin yet. Use Find or Pick on map.</div>
+    </div>
+    <div class="two">
+      <div class="field">
+        <label for="fCat">Type</label>
+        <input id="fCat" list="cats" placeholder="Dinner, Bar, Beach…">
+        <datalist id="cats">
+          <option>Breakfast / Bakery</option><option>Coffee</option><option>Lunch</option><option>Dinner</option>
+          <option>Cocktails</option><option>Nightlife</option><option>Beach</option><option>Sight</option><option>Late-night / Fast Food</option>
+        </datalist>
+      </div>
+      <div class="field">
+        <label for="fDay">Day</label>
+        <select id="fDay"></select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="fNotes">Notes</label>
+      <textarea id="fNotes" rows="2" placeholder="Who recommended it, what to order…"></textarea>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="btn-plain" id="cancelAdd">Cancel</button>
+      <button type="submit" class="btn-primary" id="saveAdd">Add to map</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="places.js"></script>
+<script>
+(() => {
+  const { days: DAYS, places: BASE } = window.TRIP;
+  const DAY = Object.fromEntries(DAYS.map(d => [d.id, d]));
+  const HOME = BASE.find(p => p.kind === "home");
+  const KEY = "sjmap.v1";
+  const $ = s => document.querySelector(s);
+
+  // ── persisted edits ──
+  const blank = () => ({ day: {}, done: {}, pos: {}, hidden: {}, custom: [] });
+  function load() {
+    try { return Object.assign(blank(), JSON.parse(localStorage.getItem(KEY)) || {}); }
+    catch { return blank(); }
+  }
+  let S = load();
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} }
+
+  // ── view state ──
+  const todayISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const todayDay = DAYS.find(d => d.date === todayISO);
+  let view = {
+    day: (() => { try { return localStorage.getItem(KEY + ".day"); } catch { return null; } })() || (todayDay ? todayDay.id : "all"),
+    q: "", hideClosed: true, sort: "group", focus: null
+  };
+  if (view.day !== "all" && !DAY[view.day]) view.day = "all";
+  let me = null;
+
+  // ── helpers ──
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const isClosed = p => /closed/i.test(p.status || "");
+  function emojiFor(p) {
+    if (p.kind === "home") return "🏠";
+    if (p.kind === "airport") return "✈️";
+    const c = (p.category + " " + p.name).toLowerCase();
+    const rules = [
+      [/piña|pina colada/, "🍹"], [/piano/, "🎹"], [/fort|castillo/, "🏰"], [/beach|playa/, "🏖️"], [/street food|kiosk/, "🥟"],
+      [/plaza|placita/, "🎉"], [/walk|paseo/, "🌅"], [/sight/, "📸"], [/fast food|taco/, "🌮"], [/pizza/, "🍕"],
+      [/seafood/, "🦐"], [/nightlife|cocktail|bar|drinks/, "🍸"], [/breakfast|bakery|brunch/, "🥐"], [/coffee|café|cafe/, "☕"],
+      [/puerto rican/, "🇵🇷"], [/market/, "🧺"], [/dinner|restaurant|lunch/, "🍽️"]
+    ];
+    for (const [re, e] of rules) if (re.test(c)) return e;
+    return "📍";
+  }
+  function km(a, b) {
+    const R = 6371, r = x => x * Math.PI / 180;
+    const dLat = r(b.lat - a.lat), dLng = r(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function distLabel(p, from = HOME) {
+    if (!from || p.id === from.id) return "";
+    const d = km(from, p);
+    if (d < 0.9) return `${Math.max(1, Math.round(d * 1000 / 80))} min walk`;
+    const drive = Math.max(4, Math.round(d * 1.35 / 24 * 60 + 2));
+    return `${(d * 0.621).toFixed(1)} mi · ~${drive} min ride`;
+  }
+  const mapsUrl = p => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(p.address ? `${p.name}, ${p.address}` : `${p.lat},${p.lng}`)}`;
+  const uberUrl = p => {
+    const u = new URLSearchParams({ action: "setPickup", pickup: "my_location" });
+    u.set("dropoff[latitude]", p.lat); u.set("dropoff[longitude]", p.lng);
+    u.set("dropoff[nickname]", p.name);
+    if (p.address) u.set("dropoff[formatted_address]", p.address);
+    return `https://m.uber.com/ul/?${u}`;
+  };
+
+  function allPlaces() {
+    return [...BASE, ...S.custom]
+      .filter(p => !S.hidden[p.id])
+      .map(p => {
+        const pos = S.pos[p.id];
+        return { ...p, day: S.day[p.id] || p.day || "none", lat: pos ? pos[0] : p.lat, lng: pos ? pos[1] : p.lng, done: !!S.done[p.id] };
+      });
+  }
+  const isFixed = p => p.kind === "home" || p.kind === "airport";
+  function matches(p) {
+    if (isFixed(p)) return false;
+    if (view.hideClosed && isClosed(p)) return false;
+    if (view.day !== "all" && p.day !== view.day) return false;
+    if (view.q) {
+      const hay = `${p.name} ${p.category} ${p.area} ${p.notes} ${p.address}`.toLowerCase();
+      if (!view.q.toLowerCase().split(/\s+/).every(t => hay.includes(t))) return false;
+    }
+    return true;
+  }
+
+  // ── map ──
+  const map = L.map("map", { zoomControl: true, tap: true }).setView([18.455, -66.08], 13);
+  map.zoomControl.setPosition("bottomright");
+  const tileUrl = dark => `https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "rastertiles/voyager"}/{z}/{x}/{y}{r}.png`;
+  const tiles = L.tileLayer(tileUrl(false), {
+    maxZoom: 20, subdomains: "abcd",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  }).addTo(map);
+  const layer = L.layerGroup().addTo(map);
+  const markers = new Map();
+  let meMarker = null;
+
+  function isDark() {
+    const t = document.documentElement.dataset.theme;
+    if (t) return t === "dark";
+    return matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function applyTheme() { tiles.setUrl(tileUrl(isDark())); }
+  try { const t = localStorage.getItem(KEY + ".theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+  applyTheme();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
+  $("#themeBtn").onclick = () => {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem(KEY + ".theme", next); } catch {}
+    applyTheme();
+  };
+
+  function icon(p) {
+    const big = isFixed(p);
+    const color = p.kind === "home" ? "#1D2327" : p.kind === "airport" ? "#475467" : DAY[p.day].color;
+    const cls = ["pin", big && "big", isClosed(p) && "closed", p.done && "done"].filter(Boolean).join(" ");
+    const size = big ? 46 : 38;
+    return L.divIcon({
+      className: "pin-wrap" + (view.focus === p.id ? " focus" : ""),
+      html: `<div class="${cls}" style="--c:${color}"><span>${emojiFor(p)}</span></div>`,
+      iconSize: [size, size], iconAnchor: [size / 2, Math.round(size / 2 + size * 0.707)], popupAnchor: [0, -Math.round(size * 1.25)]
+    });
+  }
+
+  function popupHTML(p) {
+    const dist = distLabel(p);
+    const badge = isClosed(p) ? `<span class="badge closed">${esc(p.status)}</span>` : p.source === "suggested" ? `<span class="badge sugg">Suggested</span>` : p.source === "custom" ? `<span class="badge sugg">Added</span>` : "";
+    const dayOpts = DAYS.map(d => `<option value="${d.id}" ${d.id === p.day ? "selected" : ""}>${d.id === "none" ? "Unplanned" : d.label}</option>`).join("");
+    return `<div class="pop">
+      <h3>${esc(p.name)} ${badge}</h3>
+      <div class="meta">${esc(p.category)}${p.area ? " · " + esc(p.area) : ""}${dist ? " · " + dist + " from casa" : ""}</div>
+      ${p.address ? `<div class="addr">${esc(p.address)}</div>` : ""}
+      ${p.notes ? `<div class="note">${esc(p.notes)}</div>` : ""}
+      <div class="row">
+        <a class="btn" href="${mapsUrl(p)}" target="_blank" rel="noopener">🧭 Directions</a>
+        <a class="btn uber" href="${uberUrl(p)}" target="_blank" rel="noopener">Uber</a>
+      </div>
+      ${isFixed(p) ? "" : `
+      <label class="lbl" for="daySel">Day</label>
+      <select id="daySel" data-act="day" data-id="${esc(p.id)}">${dayOpts}</select>
+      <div class="row">
+        <button class="btn ghost" data-act="done" data-id="${esc(p.id)}">${p.done ? "↩︎ Not done" : "✓ Been here"}</button>
+        <button class="btn ghost" data-act="move" data-id="${esc(p.id)}">✥ Move pin</button>
+        <button class="btn ghost" data-act="remove" data-id="${esc(p.id)}">${p.source === "custom" ? "🗑 Delete" : "Hide"}</button>
+      </div>`}
+    </div>`;
+  }
+
+  function renderMarkers() {
+    layer.clearLayers(); markers.clear();
+    for (const p of allPlaces()) {
+      if (!isFixed(p) && !matches(p)) continue;
+      const m = L.marker([p.lat, p.lng], { icon: icon(p), zIndexOffset: isFixed(p) ? 1000 : 0, title: p.name, riseOnHover: true });
+      m.bindPopup(() => popupHTML(allPlaces().find(x => x.id === p.id) || p), { maxWidth: 300, autoPanPadding: [20, 20] });
+      m.on("popupopen", () => setFocus(p.id, false));
+      m.addTo(layer);
+      markers.set(p.id, m);
+    }
+  }
+
+  // ── panel ──
+  function renderChips() {
+    const ps = allPlaces().filter(p => !isFixed(p) && !(view.hideClosed && isClosed(p)));
+    const count = id => id === "all" ? ps.length : ps.filter(p => p.day === id).length;
+    const chip = (id, label, color, isToday) =>
+      `<button class="chip ${view.day === id ? "active" : ""}" data-day="${id}" style="--c:${color}">
+        ${id !== "all" ? `<span class="dot"></span>` : ""}${label} <span class="n">${count(id)}</span>${isToday ? `<span class="today">today</span>` : ""}
+      </button>`;
+    $("#chips").innerHTML = chip("all", "All", "#1D2327") + DAYS.map(d => chip(d.id, d.short, d.color, todayDay && todayDay.id === d.id)).join("");
+  }
+
+  function renderPlan() {
+    const d = DAY[view.day];
+    if (!d || !d.plan.length) {
+      $("#planBox").innerHTML = view.day === "all" ? `
+        <div class="plan" style="--c:#0E9384">
+          <div class="when">4 days · 3 nights</div>
+          <h2>The loose plan</h2>
+          <ol>${DAYS.filter(d => d.plan.length).map(d => `<li><b style="color:${d.color}">${d.short}</b><span>${esc(d.title)}</span></li>`).join("")}</ol>
+        </div>` : "";
+      return;
+    }
+    $("#planBox").innerHTML = `
+      <div class="plan" style="--c:${d.color}">
+        <div class="when">${esc(d.label)}${todayDay && todayDay.id === d.id ? " · Today" : ""}</div>
+        <h2>${esc(d.title)}</h2>
+        <ol>${d.plan.map(([t, s]) => `<li><b>${esc(t)}</b><span>${esc(s)}</span></li>`).join("")}</ol>
+      </div>`;
+  }
+
+  function cardHTML(p) {
+    const color = DAY[p.day].color;
+    const closed = isClosed(p);
+    const dist = view.sort === "me" && me ? distLabel(p, me) + " from you" : distLabel(p);
+    const dayTag = view.day === "all" ? `<span style="color:${color};font-weight:600">${DAY[p.day].short}</span> · ` : "";
+    return `<div class="card ${closed ? "closed" : ""} ${p.done ? "done" : ""} ${view.focus === p.id ? "focus" : ""}" data-id="${esc(p.id)}" style="--c:${color}">
+      <div class="emoji">${emojiFor(p)}</div>
+      <div>
+        <div class="name">${esc(p.name)}${closed ? `<span class="badge closed">Closed</span>` : p.source === "suggested" ? `<span class="badge sugg">Idea</span>` : p.source === "custom" ? `<span class="badge sugg">Added</span>` : ""}</div>
+        <div class="meta">${dayTag}${esc(p.category)}${dist ? " · " + dist : ""}</div>
+      </div>
+      <div class="quick">
+        <a href="${mapsUrl(p)}" target="_blank" rel="noopener" title="Directions" aria-label="Directions to ${esc(p.name)}">🧭</a>
+        <a href="${uberUrl(p)}" target="_blank" rel="noopener" title="Uber" aria-label="Uber to ${esc(p.name)}">🚕</a>
+      </div>
+    </div>`;
+  }
+
+  function renderList() {
+    let ps = allPlaces().filter(matches);
+    if (!ps.length) {
+      $("#list").innerHTML = `<div class="empty">Nothing here yet.<br>Tap a pin on the map and set its day, or hit <b>+</b> to add a spot.</div>`;
+      return;
+    }
+    const origin = view.sort === "me" && me ? me : HOME;
+    if (view.sort === "name") {
+      ps.sort((a, b) => a.name.localeCompare(b.name));
+      $("#list").innerHTML = ps.map(cardHTML).join("");
+    } else if (view.sort === "dist" || view.sort === "me") {
+      ps.sort((a, b) => km(origin, a) - km(origin, b));
+      $("#list").innerHTML = ps.map(cardHTML).join("");
+    } else {
+      const areaKey = p => (p.area || "Other").split(" / ")[0];
+      const groups = {};
+      for (const p of ps) (groups[areaKey(p)] ||= []).push(p);
+      const order = Object.keys(groups).sort((a, b) =>
+        Math.min(...groups[a].map(p => km(HOME, p))) - Math.min(...groups[b].map(p => km(HOME, p))));
+      $("#list").innerHTML = order.map(g =>
+        `<div class="group-h">${esc(g)}</div>` + groups[g].sort((a, b) => km(HOME, a) - km(HOME, b)).map(cardHTML).join("")).join("");
+    }
+  }
+
+  function render({ fit = false } = {}) {
+    renderChips(); renderPlan(); renderList(); renderMarkers();
+    if (fit) fitView();
+  }
+
+  function fitView() {
+    const ps = allPlaces().filter(matches);
+    const pts = ps.map(p => [p.lat, p.lng]);
+    if (view.day === "all" || view.day === "thu" || view.day === "sun") pts.push([HOME.lat, HOME.lng]);
+    if (!pts.length) pts.push([HOME.lat, HOME.lng]);
+    const wide = innerWidth >= 900;
+    const panelH = wide ? 0 : $("#panel").getBoundingClientRect().height;
+    map.flyToBounds(L.latLngBounds(pts), {
+      paddingTopLeft: [40, 70], paddingBottomRight: [wide ? 70 : 70, panelH + 30], maxZoom: 16, duration: .6
+    });
+  }
+
+  function setFocus(id, open = true) {
+    view.focus = id;
+    document.querySelectorAll(".card.focus").forEach(c => c.classList.remove("focus"));
+    const card = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+    if (card) { card.classList.add("focus"); if (!open) card.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    markers.forEach((m, mid) => { const el = m.getElement(); if (el) el.classList.toggle("focus", mid === id); });
+    if (open) {
+      const m = markers.get(id);
+      if (m) {
+        const wide = innerWidth >= 900;
+        const target = map.project(m.getLatLng(), Math.max(map.getZoom(), 16));
+        if (!wide) target.y += $("#panel").getBoundingClientRect().height / 2 - 40;
+        map.flyTo(map.unproject(target, Math.max(map.getZoom(), 16)), Math.max(map.getZoom(), 16), { duration: .5 });
+        map.once("moveend", () => m.openPopup());
+      }
+    }
+  }
+
+  let toastT;
+  function toast(msg) {
+    const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+
+  // ── events ──
+  $("#chips").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    view.day = b.dataset.day; view.focus = null;
+    try { localStorage.setItem(KEY + ".day", view.day); } catch {}
+    map.closePopup(); render({ fit: true });
+    $("#scroll").scrollTop = 0;
+  });
+  $("#q").addEventListener("input", e => { view.q = e.target.value.trim(); renderList(); renderMarkers(); });
+  $("#hideClosed").addEventListener("change", e => { view.hideClosed = e.target.checked; render(); });
+  $("#sort").addEventListener("change", e => {
+    view.sort = e.target.value;
+    if (view.sort === "me" && !me) locate(() => renderList());
+    renderList();
+  });
+  $("#list").addEventListener("click", e => {
+    if (e.target.closest("a")) return;
+    const c = e.target.closest(".card"); if (!c) return;
+    if (innerWidth < 900) $("#panel").classList.remove("expanded");
+    setFocus(c.dataset.id, true);
+  });
+
+  // popup actions (delegated; popups live in the map pane)
+  document.addEventListener("change", e => {
+    const el = e.target.closest("[data-act='day']"); if (!el) return;
+    S.day[el.dataset.id] = el.value; save();
+    const d = DAY[el.value];
+    toast(el.value === "none" ? "Moved to Unplanned" : `Moved to ${d.label}`);
+    const id = el.dataset.id;
+    render();
+    const m = markers.get(id);
+    if (m) m.openPopup(); else map.closePopup();
+  });
+  document.addEventListener("click", e => {
+    const el = e.target.closest("button[data-act]"); if (!el) return;
+    const id = el.dataset.id, act = el.dataset.act;
+    if (act === "done") {
+      if (S.done[id]) delete S.done[id]; else S.done[id] = true;
+      save(); render(); markers.get(id)?.openPopup();
+      toast(S.done[id] ? "Nice ✓" : "Unmarked");
+    } else if (act === "remove") {
+      const custom = S.custom.find(p => p.id === id);
+      if (custom) { if (!confirm(`Delete "${custom.name}"?`)) return; S.custom = S.custom.filter(p => p.id !== id); }
+      else S.hidden[id] = true;
+      save(); map.closePopup(); render();
+      toast(custom ? "Deleted" : "Hidden. Reset edits brings it back.");
+    } else if (act === "move") {
+      const m = markers.get(id); if (!m) return;
+      map.closePopup();
+      m.dragging.enable();
+      showBanner("Drag the pin to the right spot", () => { m.dragging.disable(); hideBanner(); });
+      m.once("dragend", () => {
+        const ll = m.getLatLng();
+        S.pos[id] = [+ll.lat.toFixed(6), +ll.lng.toFixed(6)]; save();
+        m.dragging.disable(); hideBanner(); toast("Pin moved"); render();
+      });
+    }
+  });
+
+  // mobile sheet
+  $("#handle").addEventListener("click", () => {
+    const p = $("#panel");
+    if (p.classList.contains("expanded")) { p.classList.remove("expanded"); p.classList.add("collapsed"); }
+    else if (p.classList.contains("collapsed")) p.classList.remove("collapsed");
+    else p.classList.add("expanded");
+  });
+  (() => { // swipe on handle/header
+    let y0 = null;
+    const zone = $("#panel");
+    zone.addEventListener("touchstart", e => { if (e.target.closest(".scroll")) return; y0 = e.touches[0].clientY; }, { passive: true });
+    zone.addEventListener("touchend", e => {
+      if (y0 == null) return; const dy = e.changedTouches[0].clientY - y0; y0 = null;
+      if (Math.abs(dy) < 30) return;
+      const p = $("#panel");
+      if (dy < 0) { if (p.classList.contains("collapsed")) p.classList.remove("collapsed"); else p.classList.add("expanded"); }
+      else { if (p.classList.contains("expanded")) p.classList.remove("expanded"); else p.classList.add("collapsed"); }
+    });
+  })();
+
+  // location
+  function locate(cb) {
+    if (!navigator.geolocation) return toast("Location not available");
+    toast("Finding you…");
+    navigator.geolocation.getCurrentPosition(pos => {
+      me = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      if (meMarker) meMarker.setLatLng([me.lat, me.lng]);
+      else meMarker = L.marker([me.lat, me.lng], { icon: L.divIcon({ className: "", html: '<div class="me-dot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 2000 }).addTo(map);
+      cb ? cb() : map.flyTo([me.lat, me.lng], 16, { duration: .6 });
+    }, () => toast("Couldn't get your location"), { enableHighAccuracy: true, timeout: 10000 });
+  }
+  $("#locBtn").onclick = () => locate();
+  $("#fitBtn").onclick = () => fitView();
+  $("#uberHome").href = uberUrl(HOME);
+
+  // ── add a spot ──
+  const dlg = $("#dlg");
+  let draft = null; // {lat,lng}
+  let picking = false;
+  $("#fDay").innerHTML = DAYS.map(d => `<option value="${d.id}">${d.id === "none" ? "Unplanned" : d.label}</option>`).join("");
+  function setPin(lat, lng, label) {
+    draft = { lat, lng };
+    $("#pinState").textContent = `📍 Pin set${label ? ": " + label : ""}`;
+    $("#pinState").classList.add("ok");
+  }
+  function openAdd(pre) {
+    if (!pre) {
+      $("#addForm").reset(); draft = null; $("#results").innerHTML = "";
+      $("#pinState").textContent = "No pin yet. Use Find or Pick on map."; $("#pinState").classList.remove("ok");
+      $("#fDay").value = view.day !== "all" ? view.day : (todayDay ? todayDay.id : "none");
+    }
+    dlg.showModal();
+    setTimeout(() => $("#fName").focus(), 50);
+  }
+  $("#addBtn").onclick = () => openAdd();
+  $("#cancelAdd").onclick = () => dlg.close();
+  $("#findBtn").onclick = async () => {
+    const q = ($("#fAddr").value || $("#fName").value).trim();
+    if (!q) return;
+    $("#results").innerHTML = `<div class="pinstate">Searching…</div>`;
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=pr&viewbox=-66.20,18.52,-65.90,18.35&q=${encodeURIComponent(q)}`;
+      const res = await (await fetch(url, { headers: { "Accept-Language": "en" } })).json();
+      if (!res.length) { $("#results").innerHTML = `<div class="pinstate">No match. Try a street name, or Pick on map.</div>`; return; }
+      $("#results").innerHTML = res.map((r, i) => `<button type="button" data-i="${i}">${esc(r.display_name)}</button>`).join("");
+      $("#results").onclick = e => {
+        const b = e.target.closest("button"); if (!b) return;
+        const r = res[+b.dataset.i];
+        setPin(+r.lat, +r.lon, r.display_name.split(",").slice(0, 2).join(","));
+        if (!$("#fAddr").value) $("#fAddr").value = r.display_name;
+        $("#results").innerHTML = "";
+      };
+    } catch { $("#results").innerHTML = `<div class="pinstate">Search failed. Use Pick on map instead.</div>`; }
+  };
+  function showBanner(text, onCancel) {
+    $("#bannerText").textContent = text; $("#banner").classList.add("show");
+    $("#bannerCancel").onclick = onCancel;
+  }
+  function hideBanner() { $("#banner").classList.remove("show"); }
+  $("#pickBtn").onclick = () => {
+    picking = true; dlg.close();
+    if (innerWidth < 900) $("#panel").classList.add("collapsed");
+    showBanner("Tap the map to drop the pin", () => { picking = false; hideBanner(); openAdd(true); });
+  };
+  map.on("click", e => {
+    if (!picking) return;
+    picking = false; hideBanner();
+    setPin(e.latlng.lat, e.latlng.lng, "");
+    openAdd(true);
+  });
+  map.on("contextmenu", e => { // long-press on mobile
+    openAdd();
+    setPin(e.latlng.lat, e.latlng.lng, "from the map");
+  });
+  $("#addForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const name = $("#fName").value.trim();
+    if (!name) return;
+    if (!draft) { toast("Set a pin first: Find or Pick on map"); return; }
+    const p = {
+      id: "c-" + Date.now().toString(36), name,
+      address: $("#fAddr").value.trim(), area: "Added", category: $("#fCat").value.trim() || "Spot",
+      status: "Active", notes: $("#fNotes").value.trim(), lat: +draft.lat.toFixed(6), lng: +draft.lng.toFixed(6),
+      day: $("#fDay").value, source: "custom"
+    };
+    S.custom.push(p); save(); dlg.close();
+    if (view.day !== "all" && view.day !== p.day) view.day = p.day;
+    render(); toast(`Added ${p.name}`);
+    setTimeout(() => setFocus(p.id, true), 50);
+  });
+
+  // ── share / export / reset ──
+  const b64e = s => btoa(unescape(encodeURIComponent(s)));
+  const b64d = s => decodeURIComponent(escape(atob(s)));
+  $("#shareBtn").onclick = async () => {
+    const url = `${location.origin}${location.pathname}#plan=${b64e(JSON.stringify(S))}`;
+    try {
+      if (navigator.share && innerWidth < 900) await navigator.share({ title: "San Juan plan", url });
+      else { await navigator.clipboard.writeText(url); toast("Plan link copied 🔗"); }
+    } catch { prompt("Copy this link:", url); }
+  };
+  $("#csvBtn").onclick = () => {
+    const cols = ["Name", "Address", "Area", "Category", "Status", "Notes", "Day", "Done", "Lat", "Lng", "Source"];
+    const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = allPlaces().map(p => [p.name, p.address, p.area, p.category, p.status, p.notes, p.day === "none" ? "" : DAY[p.day].label, p.done ? "yes" : "", p.lat, p.lng, p.source].map(q).join(","));
+    const blob = new Blob([[cols.join(","), ...rows].join("\n")], { type: "text/csv" });
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "san_juan_plan.csv" });
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  $("#resetBtn").onclick = () => {
+    if (!confirm("Reset all edits (days, added spots, moved pins, ✓ marks)?")) return;
+    S = blank(); save(); render({ fit: true }); toast("Reset to the original list");
+  };
+
+  // incoming shared plan
+  const m = location.hash.match(/#plan=([^&]+)/);
+  if (m) {
+    try {
+      const incoming = Object.assign(blank(), JSON.parse(b64d(decodeURIComponent(m[1]))));
+      if (confirm("Load the shared San Juan plan? This replaces the edits saved on this device.")) { S = incoming; save(); }
+    } catch { toast("Couldn't read that plan link"); }
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+
+  // countdown-ish subtitle
+  if (todayDay) {
+    const d = todayDay;
+    $("#sub").textContent = `Today: ${d.label} · ${d.title}`;
+  }
+
+  render();
+  // initial view
+  setTimeout(() => fitView(), 50);
+})();
+</script>
+</body>
+</html>
