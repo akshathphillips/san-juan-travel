@@ -100,6 +100,11 @@
   .chip.active { background: var(--c, var(--ink)); color: #fff; }
   .chip.active .dot { background: #fff; }
   .chip.active .n { color: rgba(255,255,255,.8); }
+  .chips.types { padding-top: 0; }
+  .chips.types .chip { background: none; border-color: var(--line); font-weight: 500; padding: 6px 11px; }
+  .chips.types .chip.active { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+  .chips.types .chip.active .n { color: color-mix(in srgb, var(--panel) 75%, transparent); }
+  .badge.late { background: #1E2A4A; color: #C9D6FF; }
   .chip .today { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; background: rgba(255,255,255,.25); padding: 1px 5px; border-radius: 5px; }
   .chip:not(.active) .today { background: var(--sand); }
 
@@ -277,6 +282,7 @@
     </div>
   </header>
   <nav class="chips" id="chips" aria-label="Filter by day"></nav>
+  <nav class="chips types" id="types" aria-label="Filter by category"></nav>
   <div class="scroll" id="scroll">
     <div id="planBox"></div>
     <div class="tools">
@@ -288,7 +294,7 @@
         <option value="name">A → Z</option>
       </select>
     </div>
-    <label class="toggle"><input type="checkbox" id="showClaude" checked> Show Akshath’s Claude picks <span id="claudeCount"></span></label>
+    <label class="toggle"><input type="checkbox" id="showAI" checked> Show Akshath’s AI picks <span id="aiCount"></span></label>
     <div id="list"></div>
     <div class="footer-actions">
       <button class="icon-btn" id="shareBtn">🔗 Share plan link</button>
@@ -333,6 +339,7 @@
         <select id="fDay"></select>
       </div>
     </div>
+    <label class="toggle" style="margin:0 0 10px"><input type="checkbox" id="fLate"> 🌙 Open late at night</label>
     <div class="field">
       <label for="fNotes">Notes</label>
       <textarea id="fNotes" rows="2" placeholder="Who recommended it, what to order…"></textarea>
@@ -369,24 +376,43 @@
   let view = {
     day: (() => { try { return localStorage.getItem(KEY + ".day"); } catch { return null; } })() || (todayDay ? todayDay.id : "all"),
     q: "", hideClosed: true, sort: "group", focus: null,
-    showClaude: (() => { try { return localStorage.getItem(KEY + ".claude") !== "off"; } catch { return true; } })()
+    showAI: (() => { try { return localStorage.getItem(KEY + ".ai") !== "off"; } catch { return true; } })(),
+    type: (() => { try { return localStorage.getItem(KEY + ".type") || "all"; } catch { return "all"; } })()
   };
   if (view.day !== "all" && !DAY[view.day]) view.day = "all";
+  if (!["all", "food", "late", "dessert", "drinks", "coffee", "sights"].includes(view.type)) view.type = "all";
   let me = null;
 
   // ── helpers ──
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const isClosed = p => /closed/i.test(p.status || "");
-  const SOURCE = { list: "Akshath’s list", claude: "Akshath’s Claude", custom: "Added on the map" };
-  const sourceBadge = p => p.source === "claude" ? `<span class="badge ai">Akshath’s Claude</span>`
-    : p.source === "custom" ? `<span class="badge sugg">Added</span>` : "";
+  const SOURCE = { list: "Akshath’s list", ai: "Akshath’s AI", custom: "Added on the map" };
+  const TYPES = [
+    ["all", "All", ""], ["food", "Food", "🍽️"], ["late", "Late night", "🌙"], ["dessert", "Desserts", "🍨"],
+    ["drinks", "Drinks", "🍸"], ["coffee", "Coffee", "☕"], ["sights", "Sights & beaches", "🏖️"]
+  ];
+  function typesOf(p) {
+    if (p.types) return p.types;
+    const c = `${p.category} ${p.name}`.toLowerCase(), t = [];
+    if (/dessert|gelato|ice cream|helado|paleta|chocolate|pastr/.test(c)) t.push("dessert");
+    if (/cocktail|bar\b|drinks|nightlife|mezcal|whiskey|speakeasy|beer|wine/.test(c)) t.push("drinks");
+    if (/coffee|café|cafe/.test(c)) t.push("coffee");
+    if (/beach|playa|sight|fort|walk|park|museum/.test(c)) t.push("sights");
+    if (/late/.test(c)) t.push("late");
+    if (!t.length || /food|dinner|lunch|breakfast|brunch|restaurant|bakery|pizza|taco|burger/.test(c)) t.push("food");
+    return t;
+  }
+  const isLate = p => typesOf(p).includes("late");
+  const lateBadge = p => isLate(p) ? `<span class="badge late">🌙 Late</span>` : "";
+  const sourceBadge = p => lateBadge(p) + (p.source === "ai" ? `<span class="badge ai">Akshath’s AI</span>`
+    : p.source === "custom" ? `<span class="badge sugg">Added</span>` : "");
   function emojiFor(p) {
     if (p.kind === "home") return "🏠";
     if (p.kind === "airport") return "✈️";
     const c = (p.category + " " + p.name).toLowerCase();
     const rules = [
       [/piña|pina colada/, "🍹"], [/chocolate/, "🍫"], [/dessert|gelato|ice cream|paleta|helado/, "🍨"], [/mezcal|whiskey|speakeasy/, "🥃"], [/piano/, "🎹"], [/fort|castillo/, "🏰"], [/beach|playa/, "🏖️"], [/street food|kiosk/, "🥟"],
-      [/plaza|placita/, "🎉"], [/walk|paseo/, "🌅"], [/sight/, "📸"], [/fast food|taco/, "🌮"], [/pizza/, "🍕"],
+      [/plaza|placita/, "🎉"], [/walk|paseo/, "🌅"], [/sight/, "📸"], [/fast food|taco/, "🌮"], [/burger/, "🍔"], [/pizza/, "🍕"], [/late-night/, "🌙"],
       [/seafood/, "🦐"], [/nightlife|cocktail|bar|drinks/, "🍸"], [/breakfast|bakery|brunch/, "🥐"], [/coffee|café|cafe/, "☕"],
       [/puerto rican/, "🇵🇷"], [/market/, "🧺"], [/dinner|restaurant|lunch/, "🍽️"]
     ];
@@ -424,11 +450,12 @@
       });
   }
   const isFixed = p => p.kind === "home" || p.kind === "airport";
-  function matches(p) {
+  function matches(p, ignore) {
     if (isFixed(p)) return false;
     if (view.hideClosed && isClosed(p)) return false;
-    if (!view.showClaude && p.source === "claude") return false;
-    if (view.day !== "all" && p.day !== view.day) return false;
+    if (!view.showAI && p.source === "ai") return false;
+    if (ignore !== "day" && view.day !== "all" && p.day !== view.day) return false;
+    if (ignore !== "type" && view.type !== "all" && !typesOf(p).includes(view.type)) return false;
     if (view.q) {
       const hay = `${p.name} ${p.category} ${p.area} ${p.notes} ${p.address}`.toLowerCase();
       if (!view.q.toLowerCase().split(/\s+/).every(t => hay.includes(t))) return false;
@@ -515,9 +542,14 @@
 
   // ── panel ──
   function renderChips() {
-    const ps = allPlaces().filter(p => !isFixed(p) && !(view.hideClosed && isClosed(p)) && (view.showClaude || p.source !== "claude"));
-    $("#claudeCount").textContent = `(${allPlaces().filter(p => p.source === "claude").length})`;
+    const all = allPlaces();
+    $("#aiCount").textContent = `(${all.filter(p => p.source === "ai").length})`;
+    const ps = all.filter(p => matches(p, "day"));
     const count = id => id === "all" ? ps.length : ps.filter(p => p.day === id).length;
+    const pt = all.filter(p => matches(p, "type"));
+    const tcount = id => id === "all" ? pt.length : pt.filter(p => typesOf(p).includes(id)).length;
+    $("#types").innerHTML = TYPES.map(([id, label, e]) =>
+      `<button class="chip ${view.type === id ? "active" : ""}" data-type="${id}">${e ? e + " " : ""}${label} <span class="n">${tcount(id)}</span></button>`).join("");
     const chip = (id, label, color, isToday) =>
       `<button class="chip ${view.day === id ? "active" : ""}" data-day="${id}" style="--c:${color}">
         ${id !== "all" ? `<span class="dot"></span>` : ""}${label} <span class="n">${count(id)}</span>${isToday ? `<span class="today">today</span>` : ""}
@@ -636,12 +668,18 @@
     $("#scroll").scrollTop = 0;
   });
   $("#q").addEventListener("input", e => { view.q = e.target.value.trim(); renderList(); renderMarkers(); });
-  $("#showClaude").checked = view.showClaude;
-  $("#showClaude").addEventListener("change", e => {
-    view.showClaude = e.target.checked;
-    try { localStorage.setItem(KEY + ".claude", view.showClaude ? "on" : "off"); } catch {}
+  $("#types").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    view.type = b.dataset.type; view.focus = null;
+    try { localStorage.setItem(KEY + ".type", view.type); } catch {}
     map.closePopup(); render({ fit: true });
-    toast(view.showClaude ? "Showing Akshath’s Claude picks" : "Showing only your list + added spots");
+  });
+  $("#showAI").checked = view.showAI;
+  $("#showAI").addEventListener("change", e => {
+    view.showAI = e.target.checked;
+    try { localStorage.setItem(KEY + ".ai", view.showAI ? "on" : "off"); } catch {}
+    map.closePopup(); render({ fit: true });
+    toast(view.showAI ? "Showing Akshath’s AI picks" : "Showing only your list + added spots");
   });
   $("#sort").addEventListener("change", e => {
     view.sort = e.target.value;
@@ -797,8 +835,10 @@
       status: "Active", notes: $("#fNotes").value.trim(), lat: +draft.lat.toFixed(6), lng: +draft.lng.toFixed(6),
       day: $("#fDay").value, source: "custom"
     };
+    p.types = typesOf(p).filter(t => t !== "late").concat($("#fLate").checked ? ["late"] : []);
     S.custom.push(p); save(); dlg.close();
     if (view.day !== "all" && view.day !== p.day) view.day = p.day;
+    if (view.type !== "all" && !p.types.includes(view.type)) view.type = "all";
     render(); toast(`Added ${p.name}`);
     setTimeout(() => setFocus(p.id, true), 50);
   });
@@ -814,9 +854,9 @@
     } catch { prompt("Copy this link:", url); }
   };
   $("#csvBtn").onclick = () => {
-    const cols = ["Name", "Address", "Area", "Category", "Status", "Notes", "Day", "Done", "Lat", "Lng", "Source"];
+    const cols = ["Name", "Address", "Area", "Category", "Types", "Status", "Notes", "Day", "Done", "Lat", "Lng", "Source"];
     const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = allPlaces().map(p => [p.name, p.address, p.area, p.category, p.status, p.notes, p.day === "none" ? "" : DAY[p.day].label, p.done ? "yes" : "", p.lat, p.lng, SOURCE[p.source] || p.source].map(q).join(","));
+    const rows = allPlaces().map(p => [p.name, p.address, p.area, p.category, typesOf(p).join(" "), p.status, p.notes, p.day === "none" ? "" : DAY[p.day].label, p.done ? "yes" : "", p.lat, p.lng, SOURCE[p.source] || p.source].map(q).join(","));
     const blob = new Blob([[cols.join(","), ...rows].join("\n")], { type: "text/csv" });
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "san_juan_plan.csv" });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);

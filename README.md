@@ -6,8 +6,9 @@ An interactive map of the food list for San Juan, Thu Sep 24 → Sun Sep 27, org
 
 ## What it does
 - Pins for every spot on the list (`data/san_juan_food_map.csv`), color-coded by day.
-- Extra picks marked **Akshath’s Claude**: craft cocktail and mezcal bars, local desserts, coffee near the casa, forts and beaches. The **Show Akshath’s Claude picks** switch hides them all at once.
+- Extra picks marked **Akshath’s AI**: craft cocktail and mezcal bars, local desserts, coffee near the casa, forts and beaches. The **Show Akshath’s AI picks** switch hides them all at once.
 - Day tabs (Thu / Fri / Sat / Sun / Unplanned), each with a short plan. The app opens on today's tab.
+- Category filters: Food, Late night 🌙, Desserts, Drinks, Coffee, Sights & beaches. Spots open late at night carry a 🌙 Late label.
 - Walk or ride time from Casa Saffra for every spot, plus one-tap **Directions** (Google Maps) and **Uber** buttons. The **Uber home** button books a ride back to the casa.
 - Tap a pin to move it to a different day, mark it ✓ done, move the pin, or hide it.
 - **+** (or a long press on the map) adds a new spot. You can search for an address or drop the pin by hand.
